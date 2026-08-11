@@ -765,8 +765,8 @@
       'html,body,#root{touch-action:manipulation;}' +
       '#root{height:100% !important;height:100dvh !important;overflow:hidden !important;display:flex;flex-direction:column;}' +
       "[data-slot='sidebar-wrapper']{" +
-      '--titlebar-height:calc(44px + env(safe-area-inset-top, 0px)) !important;' +
-      '--titlebar-controls-top:calc(8px + env(safe-area-inset-top, 0px)) !important;' +
+      '--titlebar-height:calc(3rem + env(safe-area-inset-top, 0px)) !important;' +
+      '--titlebar-controls-top:calc(0.5rem + env(safe-area-inset-top, 0px)) !important;' +
       '--titlebar-controls-left:max(14px, env(safe-area-inset-left, 0px)) !important;' +
       '--titlebar-tools-right:max(0.75rem, env(safe-area-inset-right, 0px)) !important;}' +
       '.h-\\(--titlebar-height\\){padding-top:env(safe-area-inset-top, 0px);}' +
@@ -785,25 +785,25 @@
       'div.fixed.z-70 button:has(> .codicon-mute),' +
       'div.fixed.z-70 button:has(> .codicon-unmute){display:none !important;}' +
       "[data-slot='sidebar-wrapper']{" +
-      '--titlebar-control-size:1.75rem;' +
-      '--titlebar-control-height:1.75rem;' +
-      '--titlebar-height:calc(2.25rem + env(safe-area-inset-top, 0px)) !important;' +
-      '--titlebar-controls-top:calc(0.25rem + env(safe-area-inset-top, 0px)) !important;' +
-      '--titlebar-content-inset:calc(max(14px, env(safe-area-inset-left, 0px)) + 2 * (1.75rem + 0.25rem) + 0.5rem) !important;}' +
-      "[data-slot='aui_thread-content']{padding-top:calc(0.5rem + env(safe-area-inset-top, 0px)) !important;}" +
+      '--titlebar-control-size:2rem;' +
+      '--titlebar-control-height:2rem;' +
+      '--titlebar-height:calc(3rem + env(safe-area-inset-top, 0px)) !important;' +
+      '--titlebar-controls-top:calc(0.5rem + env(safe-area-inset-top, 0px)) !important;' +
+      '--titlebar-content-inset:calc(max(14px, env(safe-area-inset-left, 0px)) + 2 * (2rem + 0.25rem) + 0.5rem) !important;}' +
+      "[data-slot='aui_thread-content']{padding-top:calc(0.75rem + env(safe-area-inset-top, 0px)) !important;}" +
       "footer[data-slot='statusbar']{" +
       'height:calc(1.75rem + env(safe-area-inset-bottom, 0px)) !important;' +
       'min-height:calc(1.75rem + env(safe-area-inset-bottom, 0px)) !important;}' +
       "[data-slot='composer-root']:not([data-popped-out]){" +
       'width:calc(100% - max(0.5rem, env(safe-area-inset-left, 0px)) - max(0.5rem, env(safe-area-inset-right, 0px))) !important;' +
       'max-width:none !important;' +
-      'padding-bottom:max(0.25rem, env(safe-area-inset-bottom, 0px)) !important;}' +
+      'padding-bottom:max(0.5rem, env(safe-area-inset-bottom, 0px)) !important;}' +
       "[data-slot='aui_composer-clearance']{" +
-      'height:calc(var(--composer-surface-measured-height) + var(--status-stack-measured-height) + env(safe-area-inset-bottom, 0px) + 0.25rem) !important;}' +
+      'height:calc(var(--composer-surface-measured-height) + var(--status-stack-measured-height) + env(safe-area-inset-bottom, 0px) + 0.5rem) !important;}' +
       "div[role='presentation'].fixed.inset-0.z-50{" +
-      'padding:max(0.625rem, env(safe-area-inset-top, 0px)) max(0.625rem, env(safe-area-inset-right, 0px)) ' +
-      'max(0.625rem, env(safe-area-inset-bottom, 0px)) max(0.625rem, env(safe-area-inset-left, 0px)) !important;' +
-      '--titlebar-height:44px;}' +
+      'padding:max(0.75rem, env(safe-area-inset-top, 0px)) max(0.75rem, env(safe-area-inset-right, 0px)) ' +
+      'max(0.75rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px)) !important;' +
+      '--titlebar-height:48px;}' +
       '}'
     )
   }
