@@ -764,12 +764,12 @@
       'html{-webkit-text-size-adjust:100%;}' +
       'html,body,#root{touch-action:manipulation;}' +
       '#root{height:100% !important;height:100dvh !important;overflow:hidden !important;display:flex;flex-direction:column;}' +
-      "[data-slot='sidebar-wrapper']{" +
-      '--titlebar-height:calc(3rem + env(safe-area-inset-top, 0px)) !important;' +
+      ":root, body, #root, div.contents, [data-slot='sidebar-wrapper']{" +
+      '--titlebar-height:calc(3.25rem + env(safe-area-inset-top, 0px)) !important;' +
       '--titlebar-controls-top:calc(0.5rem + env(safe-area-inset-top, 0px)) !important;' +
       '--titlebar-controls-left:max(14px, env(safe-area-inset-left, 0px)) !important;' +
       '--titlebar-tools-right:max(0.75rem, env(safe-area-inset-right, 0px)) !important;}' +
-      '.h-\\(--titlebar-height\\){padding-top:env(safe-area-inset-top, 0px);}' +
+      '.h-\\(--titlebar-height\\){padding-top:env(safe-area-inset-top, 0px) !important;}' +
       'main.relative.z-3{' +
       'padding-left:env(safe-area-inset-left, 0px);padding-right:env(safe-area-inset-right, 0px);}' +
       "footer[data-slot='statusbar']{" +
@@ -784,10 +784,10 @@
       'div.fixed.z-70 button:has(> .codicon-keyboard),' +
       'div.fixed.z-70 button:has(> .codicon-mute),' +
       'div.fixed.z-70 button:has(> .codicon-unmute){display:none !important;}' +
-      "[data-slot='sidebar-wrapper']{" +
+      ":root, body, #root, div.contents, [data-slot='sidebar-wrapper']{" +
       '--titlebar-control-size:2rem;' +
       '--titlebar-control-height:2rem;' +
-      '--titlebar-height:calc(3rem + env(safe-area-inset-top, 0px)) !important;' +
+      '--titlebar-height:calc(3.25rem + env(safe-area-inset-top, 0px)) !important;' +
       '--titlebar-controls-top:calc(0.5rem + env(safe-area-inset-top, 0px)) !important;' +
       '--titlebar-content-inset:calc(max(14px, env(safe-area-inset-left, 0px)) + 2 * (2rem + 0.25rem) + 0.5rem) !important;}' +
       "[data-slot='aui_thread-content']{padding-top:calc(0.75rem + env(safe-area-inset-top, 0px)) !important;}" +
