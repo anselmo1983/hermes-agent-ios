@@ -91,7 +91,7 @@
       if (!parsed || typeof parsed !== 'object') return null
       return {
         url: typeof parsed.url === 'string' ? parsed.url.trim() : '',
-        authMode: parsed.authMode === 'token' ? 'token' : 'basic',
+        authMode: parsed.authMode === 'basic' ? 'basic' : (parsed.authMode === 'token' || parsed.token ? 'token' : 'basic'),
         username: typeof parsed.username === 'string' ? parsed.username : '',
         password: typeof parsed.password === 'string' ? parsed.password : '',
         token: typeof parsed.token === 'string' ? parsed.token : ''
@@ -240,10 +240,10 @@
       try {
         const ticketRes = await api({ path: '/api/auth/ws-ticket', method: 'POST' })
         if (ticketRes && ticketRes.ticket) {
-          wsUrl = wsScheme + '://' + parsed.host + prefix + '/ws?ticket=' + encodeURIComponent(ticketRes.ticket)
+          wsUrl = wsScheme + '://' + parsed.host + prefix + '/api/ws?ticket=' + encodeURIComponent(ticketRes.ticket)
         }
       } catch {
-        wsUrl = wsScheme + '://' + parsed.host + prefix + '/ws'
+        wsUrl = wsScheme + '://' + parsed.host + prefix + '/api/ws'
       }
     } else {
       wsUrl = wsScheme + '://' + parsed.host + prefix + '/api/ws?token=' + encodeURIComponent(conn.token)
@@ -382,10 +382,10 @@
         try {
           const ticketRes = await api({ path: '/api/auth/ws-ticket', method: 'POST' })
           if (ticketRes && ticketRes.ticket) {
-            return wsScheme + '://' + parsed.host + prefix + '/ws?ticket=' + encodeURIComponent(ticketRes.ticket)
+            return wsScheme + '://' + parsed.host + prefix + '/api/ws?ticket=' + encodeURIComponent(ticketRes.ticket)
           }
         } catch {
-          wsUrl = wsScheme + '://' + parsed.host + prefix + '/ws'
+          return wsScheme + '://' + parsed.host + prefix + '/api/ws'
         }
       }
       return wsScheme + '://' + parsed.host + prefix + '/api/ws?token=' + encodeURIComponent(conn.token)
@@ -433,24 +433,38 @@
 
       if (authMode === 'basic') {
         try {
+          if (username || password) {
+            const loginRes = await fetch(url + '/auth/password-login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ provider: 'basic', username, password })
+            })
+            captureCookies(url, loginRes.headers)
+          }
+
+          const ticketHeaders = { 'Content-Type': 'application/json', ...headers }
+          const cookieHeader = getCookieHeader(url)
+          if (cookieHeader) ticketHeaders['Cookie'] = cookieHeader
+
           const ticketRes = await fetch(url + '/api/auth/ws-ticket', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...headers }
+            headers: ticketHeaders
           })
+          captureCookies(url, ticketRes.headers)
           if (ticketRes.ok) {
             const ticketData = await ticketRes.json()
             if (ticketData && ticketData.ticket) {
-              wsUrl = wsScheme + '://' + parsed.host + prefix + '/ws?ticket=' + encodeURIComponent(ticketData.ticket)
+              wsUrl = wsScheme + '://' + parsed.host + prefix + '/api/ws?ticket=' + encodeURIComponent(ticketData.ticket)
             }
           }
         } catch {
-          wsUrl = wsScheme + '://' + parsed.host + prefix + '/ws'
+          wsUrl = wsScheme + '://' + parsed.host + prefix + '/api/ws'
         }
       } else {
         wsUrl = wsScheme + '://' + parsed.host + prefix + '/api/ws?token=' + encodeURIComponent(token)
       }
 
-      if (!wsUrl) wsUrl = wsScheme + '://' + parsed.host + prefix + '/ws'
+      if (!wsUrl) wsUrl = wsScheme + '://' + parsed.host + prefix + '/api/ws'
 
       const ws = await probeWebSocket(wsUrl)
       if (!ws.ok) {
