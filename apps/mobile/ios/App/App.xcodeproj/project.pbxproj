@@ -125,8 +125,8 @@
 		504EC2FC1FED79650016851F /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastSwiftUpdateCheck = 0920;
-				LastUpgradeCheck = 0920;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
@@ -189,6 +189,7 @@
 			showEnvVarsInLog = 0;
 		};
 		9592DBEFFC6D2A0C8D5DEB22 /* [CP] Embed Pods Frameworks */ = {
+			alwaysOutOfDate = 0;
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
