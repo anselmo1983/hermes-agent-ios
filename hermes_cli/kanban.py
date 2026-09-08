@@ -366,6 +366,8 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
                           help="Initial card status. Use 'blocked' for cards "
                                "that require immediate human ops (R3 gate) "
                                "to skip the brief running-to-blocked transition.")
+    p_create.add_argument("--assignment-mode", choices=["auto", "manual"], default=None,
+                          help="auto | manual (default: auto when assignee is omitted)")
     p_create.add_argument("--json", action="store_true", help="Emit JSON output")
 
     # --- swarm ---
@@ -850,6 +852,37 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
         help="Emit one JSON object per task on stdout",
     )
 
+    # --- auto-delegate --- (specialty analysis and profile assignment with confidence scoring)
+    p_autodelegate = sub.add_parser(
+        "auto-delegate",
+        help="Analyze a task and route to the best matching profile with confidence scoring",
+    )
+    p_autodelegate.add_argument(
+        "task_id",
+        help="Task ID to analyze and route",
+    )
+    p_autodelegate.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Confidence score threshold (0.0 - 1.0)",
+    )
+    p_autodelegate.add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-delegation even if task already has an assignee",
+    )
+    p_autodelegate.add_argument(
+        "--author",
+        default=None,
+        help="Author name recorded for audit events",
+    )
+    p_autodelegate.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON output",
+    )
+
     # --- gc ---
     p_gc = sub.add_parser(
         "gc", help="Garbage-collect archived-task workspaces, old events, and old logs",
@@ -973,6 +1006,7 @@ def kanban_command(args: argparse.Namespace) -> int:
             "context":  _cmd_context,
             "specify":  _cmd_specify,
             "decompose":  _cmd_decompose,
+            "auto-delegate": _cmd_autodelegate,
             "gc":       _cmd_gc,
         }
         handler = handlers.get(action)
@@ -1325,6 +1359,12 @@ def _cmd_create(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    is_auto = bool(
+        not args.assignee
+        and getattr(args, "assignment_mode", None)
+        and getattr(args, "assignment_mode").lower() == "auto"
+    )
+    effective_triage = bool(getattr(args, "triage", False)) or is_auto
     with kb.connect_closing() as conn:
         task_id = kb.create_task(
             conn,
@@ -1339,7 +1379,7 @@ def _cmd_create(args: argparse.Namespace) -> int:
             tenant=args.tenant,
             priority=args.priority,
             parents=tuple(args.parent or ()),
-            triage=bool(getattr(args, "triage", False)),
+            triage=effective_triage,
             idempotency_key=getattr(args, "idempotency_key", None),
             max_runtime_seconds=max_runtime,
             skills=getattr(args, "skills", None) or None,
@@ -1348,6 +1388,16 @@ def _cmd_create(args: argparse.Namespace) -> int:
             goal_max_turns=getattr(args, "goal_max_turns", None),
             initial_status=getattr(args, "initial_status", "running"),
         )
+        if is_auto:
+            try:
+                from hermes_cli import kanban_router
+                kanban_router.auto_delegate_task(
+                    conn,
+                    task_id,
+                    author=args.created_by or _profile_author(),
+                )
+            except Exception:
+                pass
         task = kb.get_task(conn, task_id)
     if getattr(args, "json", False):
         print(json.dumps(_task_to_dict(task), indent=2, ensure_ascii=False))
@@ -2697,6 +2747,68 @@ def _cmd_decompose(args: argparse.Namespace) -> int:
     if not all_flag:
         return 0 if ok_count == 1 else 1
     return 0 if (ok_count > 0 or not ids) else 1
+
+
+def _cmd_autodelegate(args: argparse.Namespace) -> int:
+    """Analyze and route a task to the best matching profile with confidence scoring."""
+    from hermes_cli import kanban_router
+
+    author = getattr(args, "author", None) or _profile_author()
+    want_json = bool(getattr(args, "json", False))
+    threshold = getattr(args, "threshold", None)
+    force = bool(getattr(args, "force", False))
+
+    with kb.connect_closing() as conn:
+        decision = kanban_router.auto_delegate_task(
+            conn,
+            args.task_id,
+            threshold=threshold,
+            force=force,
+            author=author,
+        )
+        task = kb.get_task(conn, args.task_id)
+
+    if want_json:
+        print(json.dumps({
+            "task_id": decision.task_id,
+            "action": decision.action,
+            "assigned_profile": decision.assigned_profile,
+            "confidence_score": decision.confidence_score,
+            "assignment_reason": decision.assignment_reason,
+            "child_ids": decision.child_ids,
+            "candidates": [
+                {
+                    "profile": c.profile,
+                    "score": c.score,
+                    "skill_match": c.skill_match,
+                    "tool_match": c.tool_match,
+                    "specialization_match": c.specialization_match,
+                    "reason": c.reason,
+                }
+                for c in decision.candidates
+            ],
+            "status": task.status if task else None,
+            "assignee": task.assignee if task else None,
+        }, indent=2, ensure_ascii=False))
+        return 0 if decision.action != "failed" else 1
+
+    if decision.action == "assigned":
+        conf = f"{decision.confidence_score:.2f}" if decision.confidence_score is not None else "-"
+        print(f"Auto-assigned {decision.task_id} -> {decision.assigned_profile} (confidence: {conf})")
+        if decision.assignment_reason:
+            print(f"  Reason: {decision.assignment_reason}")
+    elif decision.action == "decomposed":
+        print(f"Decomposed {decision.task_id} into {len(decision.child_ids)} subtasks")
+    elif decision.action == "manual_override":
+        print(f"Preserved manual assignee {decision.assigned_profile} (manual override)")
+    elif decision.action == "no_match":
+        print(f"No profile met confidence threshold for {decision.task_id}; retained in triage")
+        if decision.assignment_reason:
+            print(f"  Reason: {decision.assignment_reason}")
+    else:
+        print(f"kanban: auto-delegate failed: {decision.error or 'unknown error'}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _cmd_gc(args: argparse.Namespace) -> int:

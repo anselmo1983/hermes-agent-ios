@@ -608,6 +608,7 @@ class CreateTaskBody(BaseModel):
     skills: Optional[list[str]] = None
     goal_mode: bool = False
     goal_max_turns: Optional[int] = None
+    assignment_mode: Optional[str] = None
 
 
 @router.post("/tasks")
@@ -615,6 +616,14 @@ def create_task(payload: CreateTaskBody, board: Optional[str] = Query(None)):
     board = _resolve_board(board)
     conn = _conn(board=board)
     try:
+        # If user explicitly requested auto delegation without an assignee, route it.
+        is_auto = bool(
+            not payload.assignee
+            and payload.assignment_mode
+            and payload.assignment_mode.lower() == "auto"
+        )
+        effective_triage = payload.triage or is_auto
+
         task_id = kanban_db.create_task(
             conn,
             title=payload.title,
@@ -626,15 +635,37 @@ def create_task(payload: CreateTaskBody, board: Optional[str] = Query(None)):
             tenant=payload.tenant,
             priority=payload.priority,
             parents=payload.parents,
-            triage=payload.triage,
+            triage=effective_triage,
             idempotency_key=payload.idempotency_key,
             max_runtime_seconds=payload.max_runtime_seconds,
             skills=payload.skills,
             goal_mode=payload.goal_mode,
             goal_max_turns=payload.goal_max_turns,
         )
+
+        routing_info = None
+        if is_auto:
+            try:
+                from hermes_cli import kanban_router
+                decision = kanban_router.auto_delegate_task(
+                    conn,
+                    task_id,
+                    author="dashboard",
+                )
+                routing_info = {
+                    "action": decision.action,
+                    "assigned_profile": decision.assigned_profile,
+                    "confidence_score": decision.confidence_score,
+                    "assignment_reason": decision.assignment_reason,
+                    "child_ids": decision.child_ids,
+                }
+            except Exception as exc:
+                logger.warning("create_task: auto_delegate_task error: %s", exc)
+
         task = kanban_db.get_task(conn, task_id)
         body: dict[str, Any] = {"task": _task_dict(task) if task else None}
+        if routing_info:
+            body["routing"] = routing_info
         # Surface a dispatcher-presence warning so the UI can show a
         # banner when a `ready` task would otherwise sit idle because no
         # gateway is running (or dispatch_in_gateway=false). Only emit
@@ -2293,6 +2324,65 @@ def decompose_task_endpoint(
         "child_ids": outcome.child_ids or [],
         "new_title": outcome.new_title,
     }
+
+
+# ---------------------------------------------------------------------------
+# Auto-delegate endpoint (confidence-scored specialty router)
+# ---------------------------------------------------------------------------
+
+class AutoDelegateBody(BaseModel):
+    author: Optional[str] = None
+    threshold: Optional[float] = None
+    force: bool = False
+
+
+@router.post("/tasks/{task_id}/auto-delegate")
+def auto_delegate_task_endpoint(
+    task_id: str,
+    payload: Optional[AutoDelegateBody] = None,
+    board: Optional[str] = Query(None),
+):
+    """Analyze a task and route it deterministically to the best-matching profile
+    based on actual profile capabilities and confidence scoring.
+    """
+    board = _resolve_board(board)
+    conn = _conn(board=board)
+    try:
+        from hermes_cli import kanban_router
+        author = payload.author if payload else None
+        threshold = payload.threshold if payload else None
+        force = payload.force if payload else False
+        decision = kanban_router.auto_delegate_task(
+            conn,
+            task_id,
+            threshold=threshold,
+            force=force,
+            author=author or "dashboard",
+        )
+        task = kanban_db.get_task(conn, task_id)
+        return {
+            "ok": decision.action != "failed",
+            "task_id": decision.task_id,
+            "action": decision.action,
+            "assigned_profile": decision.assigned_profile,
+            "confidence_score": decision.confidence_score,
+            "assignment_reason": decision.assignment_reason,
+            "child_ids": decision.child_ids,
+            "candidates": [
+                {
+                    "profile": c.profile,
+                    "score": c.score,
+                    "skill_match": c.skill_match,
+                    "tool_match": c.tool_match,
+                    "specialization_match": c.specialization_match,
+                    "reason": c.reason,
+                }
+                for c in decision.candidates
+            ],
+            "task": _task_dict(task) if task else None,
+        }
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------

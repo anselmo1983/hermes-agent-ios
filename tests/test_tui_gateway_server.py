@@ -8684,6 +8684,31 @@ def test_session_create_records_ui_model_as_session_override(monkeypatch):
         server._sessions.clear()
 
 
+def test_session_create_explicit_default_isolated_from_process_profile(monkeypatch, tmp_path):
+    """An explicit default profile must remain session-owned even when the
+    gateway process itself was launched for a different profile.
+    """
+    monkeypatch.setattr(server, "_enable_gateway_prompts", lambda: None)
+    monkeypatch.setattr(server, "_start_agent_build", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_current_profile_name", lambda: "timbremind")
+    monkeypatch.setattr(server, "_profile_home", lambda profile: tmp_path if profile == "default" else None)
+    try:
+        response = server._methods["session.create"](
+            "profile-isolation",
+            {"cols": 96, "source": "mobile", "profile": "default"},
+        )
+        result = response["result"]
+        record = server._sessions[result["session_id"]]
+
+        assert record["requested_profile"] == "default"
+        assert record["effective_profile"] == "default"
+        assert result["info"]["requested_profile"] == "default"
+        assert result["info"]["effective_profile"] == "default"
+        assert result["info"]["profile_name"] == "default"
+    finally:
+        server._sessions.clear()
+
+
 def test_start_agent_build_passes_session_model_override(monkeypatch):
     """A model staged on the session (e.g. by session.create from the desktop
     composer) must reach _make_agent so the first build runs on it directly —

@@ -3346,6 +3346,21 @@ def _current_profile_name() -> str:
         return "default"
 
 
+def _session_profile_metadata(session: dict | None) -> dict:
+    """Return profile identity owned by the live session, never process UI state."""
+    record = session or {}
+    requested = str(record.get("requested_profile") or "").strip() or None
+    effective = str(record.get("effective_profile") or "").strip()
+    if not effective:
+        effective = _current_profile_name()
+    return {
+        "requested_profile": requested,
+        "effective_profile": effective,
+        # Backwards-compatible alias consumed by existing desktop/TUI clients.
+        "profile_name": effective,
+    }
+
+
 # Monotonic GUI<->backend contract version. The desktop app refuses to drive a
 # backend reporting less than its required value (or none at all — a pre-GUI
 # checkout), surfacing a one-click "update to align" prompt instead of failing
@@ -3400,6 +3415,8 @@ def _session_info(agent, session: dict | None = None) -> dict:
     info: dict = {
         "model": getattr(agent, "model", ""),
         "provider": getattr(agent, "provider", ""),
+        "effective_model": getattr(agent, "model", ""),
+        "effective_provider": getattr(agent, "provider", ""),
         "reasoning_effort": reasoning_effort,
         "service_tier": service_tier,
         "fast": service_tier == "priority",
@@ -3418,7 +3435,7 @@ def _session_info(agent, session: dict | None = None) -> dict:
         "update_behind": None,
         "update_command": "",
         "usage": _get_usage(agent),
-        "profile_name": _current_profile_name(),
+        **_session_profile_metadata(session),
     }
     try:
         from hermes_cli.config import (
@@ -5232,6 +5249,12 @@ def _(rid, params: dict) -> dict:
     # and each turn re-bind HERMES_HOME. None/own profile → launch (unchanged).
     profile = (params.get("profile") or "").strip() or None
     profile_home = _profile_home(profile)
+    process_profile = _current_profile_name()
+    effective_profile = (
+        profile
+        if profile and (profile_home is not None or profile.lower() == process_profile.lower())
+        else process_profile
+    )
 
     # The desktop composer owns its model/effort/fast as plain UI state and ships
     # it on every session.create. Honor each as a PER-SESSION override (built into
@@ -5289,6 +5312,8 @@ def _(rid, params: dict) -> dict:
             "parent_session_id": parent_session_id,
             "pending_title": title or None,
             "profile_home": str(profile_home) if profile_home is not None else None,
+            "requested_profile": profile,
+            "effective_profile": effective_profile,
             "running": False,
             "session_key": key,
             "show_reasoning": _load_show_reasoning(),
@@ -5342,7 +5367,17 @@ def _(rid, params: dict) -> dict:
                 "branch": _git_branch_for_cwd(_sessions[sid]["cwd"]),
                 "lazy": True,
                 "desktop_contract": DESKTOP_BACKEND_CONTRACT,
-                "profile_name": _current_profile_name(),
+                **_session_profile_metadata(_sessions[sid]),
+                "effective_model": (
+                    session_model_override.get("model")
+                    if session_model_override
+                    else _resolve_model()
+                ),
+                **(
+                    {"effective_provider": session_model_override["provider"]}
+                    if session_model_override and session_model_override.get("provider")
+                    else {}
+                ),
             },
         },
     )
@@ -5480,7 +5515,13 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, {"verification": {"status": "unknown", "evidence": None}})
 
 
-def _lazy_resume_info(cwd: str, *, model: str = "", provider: str = "") -> dict:
+def _lazy_resume_info(
+    cwd: str,
+    *,
+    session: dict | None = None,
+    model: str = "",
+    provider: str = "",
+) -> dict:
     """session.info for a not-yet-built session (the shape session.create
     returns). tools/skills land later when the deferred build emits session.info."""
     info = {
@@ -5491,10 +5532,12 @@ def _lazy_resume_info(cwd: str, *, model: str = "", provider: str = "") -> dict:
         "skills": {},
         "lazy": True,
         "desktop_contract": DESKTOP_BACKEND_CONTRACT,
-        "profile_name": _current_profile_name(),
+        **_session_profile_metadata(session),
+        "effective_model": model or _resolve_model(),
     }
     if provider:
         info["provider"] = provider
+        info["effective_provider"] = provider
     return info
 
 
@@ -5512,6 +5555,8 @@ def _deferred_session_record(
     lazy: bool = False,
     model_override=None,
     resume_runtime_overrides: dict | None = None,
+    requested_profile: str | None = None,
+    effective_profile: str | None = None,
 ) -> dict:
     """A live-session record whose AIAgent is built later (lazy watch / cold
     resume) — _init_session's shape minus the agent."""
@@ -5539,6 +5584,8 @@ def _deferred_session_record(
         "model_override": model_override,
         "pending_title": None,
         "profile_home": str(profile_home) if profile_home is not None else None,
+        "requested_profile": requested_profile,
+        "effective_profile": effective_profile or _current_profile_name(),
         "resume_runtime_overrides": resume_runtime_overrides,
         "resume_session_id": session_key,
         "running": False,
@@ -5597,6 +5644,12 @@ def _(rid, params: dict) -> dict:
     # local profile's state.db. None/own profile → the launch profile (unchanged).
     profile = (params.get("profile") or "").strip() or None
     profile_home = _profile_home(profile)
+    process_profile = _current_profile_name()
+    effective_profile = (
+        profile
+        if profile and (profile_home is not None or profile.lower() == process_profile.lower())
+        else process_profile
+    )
 
     # In a profile scope, the agent OWNS a long-lived db handle bound to that
     # profile (do NOT auto-close it here). Otherwise reuse the shared launch db.
@@ -5712,6 +5765,8 @@ def _(rid, params: dict) -> dict:
             close_on_disconnect=is_truthy_value(params.get("close_on_disconnect", False)),
             profile_home=profile_home,
             lazy=True,
+            requested_profile=profile,
+            effective_profile=effective_profile,
         )
         if (live := _claim_or_reuse_live(sid, target, record, lease)) is not None:
             return _ok(rid, _reuse_live_payload(*live))
@@ -5726,7 +5781,7 @@ def _(rid, params: dict) -> dict:
                 "resumed": target,
                 "message_count": len(messages),
                 "messages": messages,
-                "info": _lazy_resume_info(cwd),
+                "info": _lazy_resume_info(cwd, session=record),
                 "inflight": None,
                 "running": child_running,
                 "session_key": target,
@@ -5790,6 +5845,8 @@ def _(rid, params: dict) -> dict:
             profile_home=profile_home,
             model_override=overrides.get("model_override"),
             resume_runtime_overrides=overrides or None,
+            requested_profile=profile,
+            effective_profile=effective_profile,
         )
         if (live := _claim_or_reuse_live(sid, target, record, lease)) is not None:
             return _ok(rid, _reuse_live_payload(*live))
@@ -5807,6 +5864,7 @@ def _(rid, params: dict) -> dict:
                 "messages": messages,
                 "info": _lazy_resume_info(
                     cwd,
+                    session=record,
                     model=model_override.get("model") or "",
                     provider=overrides.get("provider_override") or "",
                 ),
@@ -5921,6 +5979,8 @@ def _(rid, params: dict) -> dict:
                 if init_home_token is not None:
                     reset_hermes_home_override(init_home_token)
             if sid in _sessions:
+                _sessions[sid]["requested_profile"] = profile
+                _sessions[sid]["effective_profile"] = effective_profile
                 if stored_runtime_overrides.get("model_override") is not None:
                     _sessions[sid]["model_override"] = stored_runtime_overrides[
                         "model_override"
